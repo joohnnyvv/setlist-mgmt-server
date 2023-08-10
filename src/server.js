@@ -1,5 +1,7 @@
 const express = require("express");
+const cors = require("cors");
 const app = express();
+app.use(cors());
 const { Ableton } = require("ableton-js");
 
 const ableton = new Ableton();
