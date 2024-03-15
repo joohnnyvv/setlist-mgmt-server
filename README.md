@@ -10,16 +10,15 @@ For the client-side part of the Setlist Management app, refer to the [Client Rep
 
 Follow these steps to set up the server on your local machine:
 
-1. **Clone the Repository:**
-   
+1.  **Clone the Repository:**
+
         git clone https://github.com/joohnnyvv/setlist-mgmt-server.git
 
-
-2. **Install Dependencies:**
+2.  **Install Dependencies:**
 
          npm install
 
-3. **Run the Server**
+3.  **Run the Server**
 
          node ./src/server.js
 
@@ -33,6 +32,7 @@ The server provides the following API routes:
 - `GET /start-playing`: Start playing the music.
 - `GET /stop-playing`: Stop playing the music.
 - `POST /send-cue`: Send a cue data to control playback.
+- `GET /get-tempo`: Get current song tempo.
 
 ## Contributing
 
