@@ -35,6 +35,17 @@ app.get("/cues", async (req, res) => {
   }
 });
 
+app.get("/can-jump-to-next-cue", async (req, res) => {
+  try {
+    await ableton.start();
+    const canJumpToNextCue = await ableton.song.get("can_jump_to_next_cue");
+    res.json({ canJumpToNextCue });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "An error occurred" });
+  }
+});
+
 app.get("/start-playing", async (req, res) => {
   try {
     await ableton.start();
@@ -65,7 +76,11 @@ app.post("/send-cue", async (req, res) => {
     await ableton.start();
     const cuePoint = new CuePoint(ableton, cueData);
     await cuePoint.jump();
-    res.status(200).send("Cue received and processed in Ableton Live");
+    const songTempo = await ableton.song.get("tempo");
+    res.status(200).json({
+      message: "Cue received and processed in Ableton Live",
+      songTempo,
+    });
   } catch (error) {
     console.error("Error processing cue:", error);
     res.status(500).send("Error processing cue");

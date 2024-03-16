@@ -33,6 +33,7 @@ The server provides the following API routes:
 - `GET /stop-playing`: Stop playing the music.
 - `POST /send-cue`: Send a cue data to control playback.
 - `GET /get-tempo`: Get current song tempo.
+- `GET /can-jump-to-next-cue`: Get info if can jump to next cue.
 
 ## Contributing
 
