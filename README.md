@@ -1,10 +1,6 @@
-# Setlist Management Server
+## Overview
 
-This is the server component of the Setlist Management app, responsible for handling API requests and managing the backend functionality.
-
-## References
-
-For the client-side part of the Setlist Management app, refer to the [Client Repository](https://github.com/joohnnyvv/Ableton-Live-Setlist-Manager).
+This [Node.js](https://github.com/nodejs/node) application serves as a server for managing setlists and controlling playback in Ableton Live. It provides a REST API for interacting with Ableton Live, as well as WebSocket functionality for real-time updates. This server is designed to work with the [Ableton Setlist Manager](https://github.com/joohnnyvv/ableton-setlist-manager-web) client application.
 
 ## Installation
 
@@ -22,19 +18,53 @@ Follow these steps to set up the server on your local machine:
 
          node ./src/server.js
 
-## API Routes
+## Features
 
-The server provides the following API routes:
+- Fetching and merging cue points from Ableton Live sets.
+- Starting and stopping playback in Ableton Live.
+- Updating cue order.
+- Setting loop areas.
+- Selecting songs and parts for playback.
+- Toggling loop mode.
 
-- `GET /cues`: Retrieve the list of cues (markers) for the setlist.
-- `GET /is-playing`: Check if the music is currently playing.
-- `GET /current-time`: Get the current playback time.
-- `GET /start-playing`: Start playing the music.
-- `GET /stop-playing`: Stop playing the music.
-- `POST /send-cue`: Send a cue data to control playback.
-- `GET /get-tempo`: Get current song tempo.
-- `GET /can-jump-to-next-cue`: Get info if can jump to next cue.
+## Tech Stack
 
-## Contributing
+- [Node.js](https://github.com/nodejs/node): Backend server environment.
+- [Express.js](https://github.com/expressjs/express): Web application framework for Node.js.
+- [WebSocket](https://github.com/websockets/ws): Provides full-duplex communication channels over a single TCP connection.
+- [Ableton-js](https://github.com/leolabs/ableton-js): Library for controlling Ableton Live.
+- [cors](https://github.com/expressjs/cors): Middleware for enabling Cross-Origin Resource Sharing (CORS).
+- [http](https://nodejs.org/api/http.html): Module for creating HTTP servers.
 
-Feel free to contribute to this project by submitting issues or pull requests. For major changes, please open an issue first to discuss what you would like to change.
+## API Endpoints
+
+- `GET` /cues: Fetches cue points from Ableton Live sets.
+- `GET` /start-playing: Starts playback in Ableton Live.
+- `GET` /stop-playing: Stops playback in Ableton Live.
+- `POST` /update-cues: Updates cue order in Ableton Live.
+- `POST` /set-loop-area: Sets loop area in Ableton Live.
+- `POST` /set-selected-song-index: Sets selected song or part for playback in Ableton Live.
+- `GET` /set-is-looped: Toggles loop mode in Ableton Live.
+
+## WebSocket Events
+
+- `song_time`: Sends current song time during playback.
+- `is_playing`: Sends playback status (playing or paused).
+- `tempo`: Sends tempo changes.
+- `is_looped`: Sends loop mode status.
+- `song_progress`: Sends progress of the current song.
+- `part_progress`: Sends progress of the current song part.
+- `selected_part_index`: Sends index of the selected song part.
+- `selected_song_index`: Sends index of the selected song.
+
+## Designed for [Ableton Setlist Manager Client App](https://github.com/joohnnyvv/ableton-setlist-manager-web)
+
+This server is specifically designed to work in conjunction with the [Ableton Setlist Manager](https://github.com/joohnnyvv/ableton-setlist-manager-web) client application.
+
+## Authors
+
+- [@joohnnyvv](https://github.com/joohnnyvv)
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/joohnnyvv/setlist-mgmt-server/blob/main/LICENSE.md) file for details.
