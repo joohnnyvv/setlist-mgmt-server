@@ -8,7 +8,6 @@ const WebSocket = require("ws");
 const { Ableton } = require("ableton-js");
 const { CuePoint } = require("ableton-js/ns/cue-point");
 const { EventEmitter } = require("events");
-const { clear } = require("console");
 
 const server = http.createServer();
 
@@ -17,7 +16,76 @@ const wss = new WebSocket.Server({ server });
 const ableton = new Ableton({ logger: console });
 
 let globalMergedCues = [];
+
 const selectedSongIndexEmitter = new EventEmitter();
+const selectedPartIndexEmitter = new EventEmitter();
+const currentSongProgressEmitter = new EventEmitter();
+const currentPartProgressEmitter = new EventEmitter();
+const cueEventEmitter = new EventEmitter();
+
+const extractAdditionalInfo = (name) => {
+  const startIndex = name.indexOf("{");
+  const endIndex = name.indexOf("}");
+  if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+    const additionalInfoStr = name.substring(startIndex, endIndex + 1);
+    return JSON.parse(additionalInfoStr);
+  }
+  return {};
+};
+
+const mergeCues = (cues) => {
+  const pairs = [];
+  let currentSong = null;
+  let currentSongPartsCues = [];
+
+  cues.forEach((cue, index) => {
+    if (cue.name.includes("<end>")) {
+      if (currentSong) {
+        const addInfo = extractAdditionalInfo(currentSong.name);
+        const calculatedSongLength =
+          ((cue.time - currentSong.time) * 2) /
+          (parseInt(addInfo.tempo.replace(/[^0-9]/g, "")) / 60);
+        if (currentSong.name.includes("{") && currentSong.name.includes("}")) {
+          const clearedCueName = currentSong.name.split("{").shift();
+          currentSong.name = clearedCueName;
+        }
+        pairs.push({
+          song: [currentSong, cue],
+          additionalInfo: addInfo,
+          doesStop: true,
+          songLengthInBars: cue.time - currentSong.time,
+          songLengthInSec: calculatedSongLength,
+          songPartsCues: currentSongPartsCues,
+        });
+        currentSong = null;
+        currentSongPartsCues = [];
+      }
+    } else if (cue.name.startsWith(">")) {
+      if (index < cues.length - 1) {
+        const nextCue = cues[index + 1];
+        const cueLength = nextCue.time - cue.time;
+        cue.name = cue.name.substr(2);
+        currentSongPartsCues.push({ ...cue, length: cueLength });
+      }
+    } else {
+      currentSong = cue;
+    }
+  });
+  globalMergedCues = pairs;
+  return pairs;
+};
+
+const fetchCues = async () => {
+  try {
+    await ableton.start();
+    const cues = await ableton.song.get("cue_points");
+    const mergedCues = mergeCues(cues.map((c) => c.raw));
+    return mergedCues;
+  } catch (error) {
+    console.error("An error occurred:", error);
+    throw error;
+  }
+};
 
 ableton
   .start()
@@ -28,21 +96,50 @@ ableton
         if (client.readyState === WebSocket.OPEN) {
           client.send(JSON.stringify({ type: "song_time", time }));
 
-          const currentIndex = globalMergedCues.findIndex(
+          const currentSongIndex = globalMergedCues.findIndex(
             (cue) => cue.song[0].time <= time && cue.song[1].time >= time
           );
+          const currentPartIndex = globalMergedCues[
+            currentSongIndex
+          ].songPartsCues.findIndex((partCue, i) => {
+            return partCue.time <= time && partCue.time + partCue.length > time;
+          });
+          if (globalMergedCues && currentSongIndex !== -1) {
+            const currentSong = globalMergedCues[currentSongIndex];
+            const currentSongProgress =
+              (time - currentSong.song[0].time) / currentSong.songLengthInBars;
+            currentSongProgressEmitter.emit(
+              "songProgressChanged",
+              currentSongProgress * 100
+            );
+            if (currentPartIndex !== -1) {
+              const currentPartCue =
+                currentSong.songPartsCues[currentPartIndex];
+              if (currentPartCue) {
+                const currentPartProgress =
+                  (time - currentPartCue.time) / currentPartCue.length;
+                currentPartProgressEmitter.emit(
+                  "partProgressChanged",
+                  currentPartProgress * 100
+                );
+              }
+            }
+          }
           selectedSongIndexEmitter.emit(
             "selectedSongIndexChanged",
-            currentIndex
+            currentSongIndex
+          );
+          selectedPartIndexEmitter.emit(
+            "selectedPartIndexChanged",
+            currentPartIndex
           );
           if (
-            currentIndex !== -1 &&
-            globalMergedCues[currentIndex].song[1].time ===
+            currentSongIndex !== -1 &&
+            globalMergedCues[currentSongIndex].song[1].time ===
               parseInt(time.toFixed(0))
           ) {
-            const nextIndex = currentIndex + 1;
-            console.log(nextIndex);
-            if (!globalMergedCues[currentIndex].doesStop) {
+            const nextIndex = currentSongIndex + 1;
+            if (!globalMergedCues[currentSongIndex].doesStop) {
               selectedSongIndexEmitter.emit(
                 "selectedSongIndexChanged",
                 nextIndex
@@ -90,15 +187,56 @@ ableton
         }
       });
     });
-    selectedSongIndexEmitter.on("selectedSongIndexChanged", (newIndex) => {
-      console.log("Selected Song Index changed:", newIndex);
+    currentSongProgressEmitter.on("songProgressChanged", (songProgress) => {
       const message = JSON.stringify({
-        type: "selected_song_index",
-        index: newIndex,
+        type: "song_progress",
+        songProgress: songProgress,
       });
       wss.clients.forEach((client) => {
         if (client.readyState === WebSocket.OPEN) {
           client.send(message);
+        }
+      });
+    });
+    currentPartProgressEmitter.on("partProgressChanged", (partProgress) => {
+      const message = JSON.stringify({
+        type: "part_progress",
+        partProgress: partProgress,
+      });
+      wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(message);
+        }
+      });
+    });
+    selectedPartIndexEmitter.on("selectedPartIndexChanged", (partIndex) => {
+      const message = JSON.stringify({
+        type: "selected_part_index",
+        partIndex: partIndex,
+      });
+      wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(message);
+        }
+      });
+    });
+    selectedSongIndexEmitter.on("selectedSongIndexChanged", (songIndex) => {
+      const message = JSON.stringify({
+        type: "selected_song_index",
+        songIndex: songIndex,
+      });
+      wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(message);
+        }
+      });
+    });
+    cueEventEmitter.on("cuesUpdated", (updatedCues) => {
+      wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(
+            JSON.stringify({ type: "cues_updated", cues: updatedCues })
+          );
         }
       });
     });
@@ -110,62 +248,6 @@ ableton
 server.listen(8080, () => {
   console.log("Server listening on port 8080");
 });
-
-const extractAdditionalInfo = (name) => {
-  const startIndex = name.indexOf("{");
-  const endIndex = name.indexOf("}");
-  if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-    const additionalInfoStr = name.substring(startIndex, endIndex + 1);
-    console.log(additionalInfoStr);
-    return JSON.parse(additionalInfoStr);
-  }
-  return {};
-};
-
-const mergeCues = (cues) => {
-  const pairs = [];
-  let currentSong = null;
-
-  cues.forEach((cue) => {
-    if (cue.name.includes("<end>")) {
-      if (currentSong) {
-        const addInfo = extractAdditionalInfo(currentSong.name);
-        const calculatedSongLength =
-          ((cue.time - currentSong.time) * 2) /
-          (parseInt(addInfo.tempo.replace(/[^0-9]/g, "")) / 60);
-        if (currentSong.name.includes("{") && currentSong.name.includes("}")) {
-          const clearedCueName = currentSong.name.split("{").shift();
-          currentSong.name = clearedCueName;
-          console.log(clearedCueName);
-        }
-        pairs.push({
-          song: [currentSong, cue],
-          additionalInfo: addInfo,
-          doesStop: false,
-          songLengthInBars: cue.time - currentSong.time,
-          songLengthInSec: calculatedSongLength,
-        });
-        currentSong = null;
-      }
-    } else {
-      currentSong = cue;
-    }
-  });
-  globalMergedCues = pairs;
-  return pairs;
-};
-
-const fetchCues = async () => {
-  try {
-    await ableton.start();
-    const cues = await ableton.song.get("cue_points");
-    const mergedCues = mergeCues(cues.map((c) => c.raw));
-    return mergedCues;
-  } catch (error) {
-    console.error("An error occurred:", error);
-    throw error;
-  }
-};
 
 app.get("/cues", async (req, res) => {
   try {
@@ -205,8 +287,8 @@ app.post("/update-cues", async (req, res) => {
   const { cues } = req.body;
   try {
     await ableton.start();
-    console.log(cues);
     globalMergedCues = cues;
+    cueEventEmitter.emit("cuesUpdated", globalMergedCues);
     res.status(200).json({ message: "Ceeue order updated successfully" });
   } catch (error) {
     console.error("Error updating cue order:", error);
@@ -230,11 +312,23 @@ app.post("/set-loop-area", async (req, res) => {
 });
 
 app.post("/set-selected-song-index", async (req, res) => {
-  const newIndex = req.body.newIndex;
+  const songIndex = req.body.songIndex;
+  const partIndex = req.body.partIndex;
   try {
     await ableton.start();
-    const cuePoint = new CuePoint(ableton, globalMergedCues[newIndex].song[0]);
-    await cuePoint.jump();
+    if (partIndex === -1) {
+      const songCuePoint = new CuePoint(
+        ableton,
+        globalMergedCues[songIndex].song[0]
+      );
+      await songCuePoint.jump();
+    } else {
+      const partCuePoint = new CuePoint(
+        ableton,
+        globalMergedCues[songIndex].songPartsCues[partIndex]
+      );
+      await partCuePoint.jump();
+    }
     res.status(200).json({
       message: "Cue received and processed in Ableton Live",
     });
@@ -244,7 +338,7 @@ app.post("/set-selected-song-index", async (req, res) => {
   }
 });
 
-app.post("set-is-looped", async (req, res) => {
+app.get("/set-is-looped", async (req, res) => {
   try {
     await ableton.start();
     const currentLoopState = await ableton.song.get("loop");
